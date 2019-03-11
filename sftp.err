@@ -1,0 +1,5 @@
+..\vcpkg\packages\libssh_x86-windows\include\libssh\sftp.h(50): Error! E125: col(25) invalid redefinition of the typedef name 'uid_t'
+..\vcpkg\packages\libssh_x86-windows\include\libssh\sftp.h(50): Note! N393: col(25) included from sftp.cpp(13)
+C:\WATCOM\H\sys\types.h(105): Note! N392: col(25) definition: 'uid_t'
+..\vcpkg\packages\libssh_x86-windows\include\libssh\sftp.h(53): Error! E125: col(25) invalid redefinition of the typedef name 'gid_t'
+C:\WATCOM\H\sys\types.h(106): Note! N392: col(25) definition: 'gid_t'
