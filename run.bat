@@ -1,0 +1,1 @@
+tosftp.exe "e:\development\tosftp\actions.ini" "e:\development\tosftp\servers.ini" 

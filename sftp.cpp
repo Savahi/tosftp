@@ -219,7 +219,9 @@ int sftpInit(void) {
 	 	if (status != SSH_OK) { 
 			_sftpErrorCode = -1;
 		} else {
-			status = ssh_userauth_password(_sshSession, _user, _password);
+			ssh_options_set(_sshSession, SSH_OPTIONS_USER, _user);
+			status = ssh_userauth_password(_sshSession, NULL, _password);
+			//status = ssh_userauth_password(_sshSession, _user, _password);
 			if (status != SSH_AUTH_SUCCESS) {
 				_sftpErrorCode = -1;
 			} else { // INITIALIZING SFTP SESSION...
@@ -237,7 +239,7 @@ int sftpInit(void) {
 	}
 
 	if( _sftpErrorCode == -1 ) {
-		sftpClose();
+		; //sftpClose(); // An error arised, that's why the line is commented.
 	}
 	return _sftpErrorCode;
 }
@@ -250,6 +252,7 @@ void sftpClose(void) {
 	if( _sftpSession != NULL ) {
 		sftp_free(_sftpSession);
 	}    
+	_sftpSession = NULL;
 
 	if( _sshSession != NULL ) {
 	    ssh_disconnect(_sshSession);

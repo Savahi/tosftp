@@ -6,43 +6,52 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <string>
+#include <vector>
+#include <map>
 #include "ftp.h"
 #include "sftp.h"
+
+std::map<int, std::wstring> _errorMessages = { 
+	{ 0, L"" }, { -1, L"Unknown error"}, { -2, L"Failed to read local file" }, 
+	{ -3, L"Failed to read remote file" }, { -4, L"Failed to write local file" }, { -5, L"Failed to write remote file" }
+};
 
 #define CONNECTION_NAMES_BUFFER 2000
 wchar_t _connectionNames[CONNECTION_NAMES_BUFFER + 1];
 
 #define MAX_CONNECTIONS_NUMBER 100
-wchar_t *_connections[MAX_CONNECTIONS_NUMBER];
-int _connectionsNumber = 0;
-int readConnections(wchar_t *fileName);
+static wchar_t *_connections[MAX_CONNECTIONS_NUMBER];
+static int _connectionsNumber = 0;
+static int readConnections(wchar_t *fileName);
 
 #define PROFILE_STRING_BUFFER 1000
 
-wchar_t _server[PROFILE_STRING_BUFFER + 1];
-wchar_t _directory[PROFILE_STRING_BUFFER + 2]; // +2 to append slash if required
-wchar_t _user[PROFILE_STRING_BUFFER + 1];
-wchar_t _password[PROFILE_STRING_BUFFER + 1];
-wchar_t _mode[PROFILE_STRING_BUFFER + 1];
-int _port=-1;
+static wchar_t _server[PROFILE_STRING_BUFFER + 1];
+static wchar_t _directory[PROFILE_STRING_BUFFER + 2]; // +2 to append slash if required
+static wchar_t _user[PROFILE_STRING_BUFFER + 1];
+static wchar_t _password[PROFILE_STRING_BUFFER + 1];
+static wchar_t _mode[PROFILE_STRING_BUFFER + 1];
+static int _port=-1;
 
-int readConnection(wchar_t *fileName, wchar_t *connectionName);
+static int readConnection(wchar_t *fileName, wchar_t *connectionName);
 
-#define MAX_FILES_NUMBER 100
-wchar_t *_fileNames[MAX_FILES_NUMBER];
-int _filesNumber = 0;
-int readFileNames(wchar_t *fileNamesBuffer);
-
-wchar_t _results[MAX_FILES_NUMBER+1];
+#define MAX_FILES_NUMBER 1000
+static wchar_t *_fileNames[MAX_FILES_NUMBER];
+static int _filesNumber = 0;
+static int readFileNames(wchar_t *fileNamesBuffer);
 
 static void delete_spaces_from_string(wchar_t* str);
 static bool is_empty_string(wchar_t* str, bool comma_is_empty_char);
 static void delete_char_from_string(wchar_t* str, int pos);
 static void substitute_char_in_string(wchar_t*str, wchar_t charToFind, wchar_t charToReplaceWith);
 
-static void writeResultIntoIniFile(wchar_t *sectionName, const wchar_t *result = nullptr);
+static void writeErrorIntoIniFile(wchar_t *sectionName, const wchar_t *errorText = nullptr);
+static void writeResultIntoIniFile(wchar_t *sectionName, const wchar_t *errors, std::vector<std::wstring>& errorTexts);
 
-wchar_t **_argList;
+static int decrypt( char *src, char *dst );
+
+static wchar_t **_argList=nullptr;
 
 int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine, int nCmdShow)
 {
@@ -51,27 +60,27 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 
 	int argCount;
 	_argList = CommandLineToArgvW(GetCommandLineW(), &argCount);
-	if (_argList == nullptr || argCount < 3 ) {
-		MessageBoxW(NULL, L"Unable to parse command line. Use tosftp.exe actions.ini servers.ini", L"Error", MB_OK);
+	if (_argList == nullptr || argCount < 3) {
+		// MessageBoxW(NULL, L"Unable to parse command line. Use tosftp.exe actions.ini servers.ini", L"Error", MB_OK);
 		goto lab_exit;
 	}
 
-	if (readConnections(_argList[1]) <= 0) { // Each action (transfer) section is entitled with a name of a connection
-		MessageBoxW(NULL, L"Unable to read connections", L"Error", MB_OK);
+	status = readConnections(_argList[1]);
+	if( status <= 0 ) {
 		goto lab_exit;
-	} 
+	}
 	// The *_connections[] array is initialized now with connection names, the _connectionsNumber variable stores the number of connections read.
 
-	for (int iconn = 0; iconn < _connectionsNumber; iconn++) { // Iterating through transfer sections...
+	for (int iconn = 0; iconn < _connectionsNumber; iconn++) { // Iterating through transfer (connection) sections...
 		wchar_t action[PROFILE_STRING_BUFFER + 1];
 		status = GetPrivateProfileStringW(_connections[iconn], L"Action", NULL, action, PROFILE_STRING_BUFFER, _argList[1]);
 		if (status <= 0 || status >= PROFILE_STRING_BUFFER - 2) {
-			writeResultIntoIniFile(_connections[iconn]);
+			writeErrorIntoIniFile(_connections[iconn]);
 			continue;
 		}
 
 		if (readConnection(_argList[2], _connections[iconn]) == -1) { // Reading details of the connection
-			writeResultIntoIniFile(_connections[iconn]);
+			writeErrorIntoIniFile(_connections[iconn]);
 			continue;
 		}
 
@@ -81,14 +90,14 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 		} else if ( (wcscmp(_mode, L"SSH") == 0) || (wcscmp(_mode, L"SFTP") == 0) ) {
 			transferMode = 2;
 		} else {
-			writeResultIntoIniFile(_connections[iconn]);
+			writeErrorIntoIniFile(_connections[iconn]);
 			continue;
 		}
 
 		wchar_t filesDir[PROFILE_STRING_BUFFER + 2]; // A local directory to read file from / write files to
 		status = GetPrivateProfileStringW(_connections[iconn], L"FilesDir", NULL, filesDir, PROFILE_STRING_BUFFER, _argList[1]);
 		if ( status <= 0 || status >= PROFILE_STRING_BUFFER - 2) {
-			writeResultIntoIniFile(_connections[iconn]);
+			writeErrorIntoIniFile(_connections[iconn]);
 			continue;
 		}
 		if (status <= 0) {
@@ -104,7 +113,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 		wchar_t fileNamesBuffer[PROFILE_STRING_BUFFER + 1]; // A buffer to read the list of files into
 		status = GetPrivateProfileStringW(_connections[iconn], L"FileNames", NULL, fileNamesBuffer, PROFILE_STRING_BUFFER, _argList[1]);
 		if (status <= 0 || status >= PROFILE_STRING_BUFFER - 2) {
-			writeResultIntoIniFile(_connections[iconn]);			
+			writeErrorIntoIniFile(_connections[iconn]);			
 			continue;
 		}
 
@@ -124,36 +133,44 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 		WideCharToMultiByte(CP_ACP, 0, _user, -1, userMultiByte, PROFILE_STRING_BUFFER, &default_char, NULL);
 		char passwordMultiByte[PROFILE_STRING_BUFFER + 1];
 		WideCharToMultiByte(CP_ACP, 0, _password, -1, passwordMultiByte, PROFILE_STRING_BUFFER, &default_char, NULL);
+		char passwordMultiByteDecrypted[PROFILE_STRING_BUFFER + 1];
+		status = decrypt( passwordMultiByte, passwordMultiByteDecrypted );
+		if( status == -1 ) {
+			writeErrorIntoIniFile(_connections[iconn]);			
+			continue;
+		}
 		char directoryMultiByte[PROFILE_STRING_BUFFER + 1];
 		WideCharToMultiByte(CP_ACP, 0, _directory, -1, directoryMultiByte, PROFILE_STRING_BUFFER, &default_char, NULL);
 
 		int initStatus=-1;		
 		if( transferMode == 1 ) { // FTP
-			int credentialsStatus = ftpSetCredentials(serverMultiByte, userMultiByte, passwordMultiByte, _port);
+			int credentialsStatus = ftpSetCredentials(serverMultiByte, userMultiByte, passwordMultiByteDecrypted, _port);
 			if( credentialsStatus >= 0 ) {
 				initStatus = ftpInit();
 			}
 		} else { // SSH
-			int credentialsStatus = sftpSetCredentials(serverMultiByte, userMultiByte, passwordMultiByte);
+			int credentialsStatus = sftpSetCredentials(serverMultiByte, userMultiByte, passwordMultiByteDecrypted);
 			if( credentialsStatus >= 0 ) {
 				initStatus = sftpInit();
 			}
 		}
 		if( initStatus < 0 ) {
-			writeResultIntoIniFile(_connections[iconn]);
+			writeErrorIntoIniFile(_connections[iconn]);
 			continue;
 		}
 
 		if (readFileNames(fileNamesBuffer) <= 0) {
-			writeResultIntoIniFile(_connections[iconn]);
+			writeErrorIntoIniFile(_connections[iconn]);
 			continue;
 		}
 
+		wchar_t errors[MAX_FILES_NUMBER + 1];
 		for( int ifile = 0 ; ifile < _filesNumber ; ifile++ ) {
-			_results[ifile] = L'-';
+			errors[ifile] = L'-';
 		}
-		_results[_filesNumber] = L'\x0';
-		
+		errors[_filesNumber] = L'\x0';
+		std::vector<std::wstring> errorTexts;
+
 		for( int ifile = 0 ; ifile < _filesNumber ; ifile++ ) {
 			if( actionCode == 2 ) { // Uploading...
 				wchar_t srcPath[PROFILE_STRING_BUFFER * 2 + 1];
@@ -168,27 +185,16 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 				char fileNameMultiByte[PROFILE_STRING_BUFFER + 1];
 				WideCharToMultiByte(CP_ACP, 0, _fileNames[ifile], -1, fileNameMultiByte, PROFILE_STRING_BUFFER, &default_char, NULL);
 
-				MessageBoxA(NULL, srcPathMultiByte, "src Path Multi byte", MB_OK);
-				MessageBoxA(NULL, directoryMultiByte, "Directory Multi byte", MB_OK);				
-				
+				int error;
 				if (transferMode == 1) {				// FTP
 					status = ftpUpload(srcPathMultiByte, fileNameMultiByte, directoryMultiByte );
-					DWORD error;					
-					char errorText[1000];
-					char errorMessage[1000];
-					ftpGetLastError(NULL, &error, errorText);
-					sprintf( errorMessage, "%s::::(%d)", errorText, error );
-					MessageBoxA(NULL, errorMessage, "Error", MB_OK);				
+					ftpGetLastError(&error, NULL, NULL);
 				} else {								// SSH FTP
 					status = sftpUpload(srcPathMultiByte, fileNameMultiByte, directoryMultiByte);
-					DWORD error;					
-					char errorText[1000];
-					char errorMessage[1000];
-					ftpGetLastError(NULL, &error, errorText);
-					sprintf( errorMessage, "%s::::(%d)", errorText, error );
-					MessageBoxA(NULL, errorMessage, "Error", MB_OK);				
+					sftpGetLastError(&error, NULL, NULL);
 				}
-				_results[ifile] = (status == 0) ? L'+' : L'-';				
+				errors[ifile] = (status == 0) ? L'+' : L'-';
+				errorTexts.push_back( _errorMessages.find(error)->second );
 				} 
 			else if ( actionCode == 1 ) { // Downloading...
 				wchar_t destPath[PROFILE_STRING_BUFFER*2 + 1];
@@ -202,27 +208,19 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 				char fileNameMultiByte[PROFILE_STRING_BUFFER + 1];
 				WideCharToMultiByte(CP_ACP, 0, _fileNames[ifile], -1, fileNameMultiByte, PROFILE_STRING_BUFFER, &default_char, NULL);
 
-				//strcpy(directoryMultiByte,"");				
-				char b[2000];
-				sprintf( b, "destpath=%s :: filename=%s :: directory=%s", destPathMultiByte, fileNameMultiByte, directoryMultiByte);
-				MessageBoxA(NULL, b, "destPathMultiByte", MB_OK);				
-
+				int error;
 				if (transferMode == 1) {				//	FTP
 					status = ftpDownload(destPathMultiByte, fileNameMultiByte, directoryMultiByte);
-					DWORD error;
-					char errorText[1000];
-					char errorMessage[1000];
-					ftpGetLastError(NULL, &error, errorText);
-					sprintf( errorMessage, "%s::::(%d/%d)", errorText, status, error );
-					MessageBoxA(NULL, errorMessage, "Error", MB_OK);				
+					ftpGetLastError(&error, NULL, NULL);
 				} else {												// SSH FTP
 					status = sftpDownload(destPathMultiByte, fileNameMultiByte, directoryMultiByte);
+					sftpGetLastError(&error, NULL, NULL);
 				}
-				_results[ifile] = (status == 0) ? L'+' : L'-';
+				errors[ifile] = (status == 0) ? L'+' : L'-';
+				errorTexts.push_back(_errorMessages.find(error)->second);
 			}
 		}
-		MessageBoxW(NULL, _results, L"Error", MB_OK);								
-		writeResultIntoIniFile(_connections[iconn], _results);
+		writeResultIntoIniFile(_connections[iconn], errors, errorTexts);
 		
 		if( transferMode == 1 ) { 			// FTP
 			ftpClose();
@@ -230,7 +228,8 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 			sftpClose();
 		}
 	}
-
+	exitStatus = 0;
+	
 lab_exit:
 	if (_argList != nullptr) {
 		LocalFree(_argList);
@@ -253,6 +252,9 @@ int readConnections(wchar_t *fileName)
 		if (_connectionNames[i] == L'\x0' && _connectionNames[i + 1] != L'\x0') {
 			_connections[_connectionsNumber] = &_connectionNames[i + 1];
 			_connectionsNumber++;
+			if( _connectionsNumber >= MAX_CONNECTIONS_NUMBER ) {
+				break;
+			}
 			i++;
 		}
 	}
@@ -329,7 +331,10 @@ int readFileNames( wchar_t *fileNamesBuffer ) {
 			fileNamesBuffer[ibuff] = L'\x0';
 			ibuff++;
 			_fileNames[_filesNumber] = &fileNamesBuffer[ibuff];
-			_filesNumber += 1;
+			_filesNumber++;
+			if( _filesNumber >= MAX_FILES_NUMBER ) {
+				break;
+			}
 		}
 	}
 	return _filesNumber;
@@ -402,12 +407,52 @@ static void delete_spaces_from_string(wchar_t* str)
 	}
 }
 
-static void writeResultIntoIniFile( wchar_t *sectionName, const wchar_t *result )
-{
-	const wchar_t *error = L"-";
 
-	if( result == nullptr ) {
-		result = error;
+static void writeErrorIntoIniFile(wchar_t *sectionName, const wchar_t *errorText)
+{
+	wchar_t *defaultErrorText = L"Error";
+	if (errorText == nullptr) {
+		errorText = defaultErrorText;
 	}
-	WritePrivateProfileStringW( sectionName, L"Result", result, _argList[1] );
+	WritePrivateProfileStringW(sectionName, L"Result", L"-", _argList[1]);
+	WritePrivateProfileStringW(sectionName, L"Reason", errorText, _argList[1]);
+}
+
+
+static void writeResultIntoIniFile( wchar_t *sectionName, const wchar_t *errors, std::vector<std::wstring>& errorTexts )
+{
+	WritePrivateProfileStringW( sectionName, L"Result", errors, _argList[1] );
+
+	std::wstring errorTextsCombined;
+	for (int i = 0; i < errorTexts.size(); i++) {
+		if (i > 0) {
+			errorTextsCombined.append(L";");
+		}
+		errorTextsCombined.append(errorTexts[i]);
+	}
+	WritePrivateProfileStringW(sectionName, L"Reason", errorTextsCombined.c_str(), _argList[1]);
+}
+
+static int decrypt( char *src, char *dst ) {
+    char symbolBuffer[3];
+    
+    int passwordLength = strlen(src);
+    if( passwordLength % 2 ) {
+        return -1;
+    }
+	int halfLength = passwordLength/2;
+    
+    symbolBuffer[2] = '\x0';
+    for( int iSrc = 0, iDst=0 ; iSrc < passwordLength ; iSrc+=2, iDst++ ) {
+        symbolBuffer[0] = src[iSrc];
+        symbolBuffer[1] = src[iSrc+1];
+        int dec;
+        int status = sscanf( symbolBuffer, "%X", &dec );
+        if( status != 1 ) {
+            return -1;
+        }
+        dst[iDst] = (char)( dec^0xFF );
+    }
+    dst[ halfLength ] = '\x0';
+   return 0;
 }
