@@ -1,4 +1,1 @@
-FILE
-FTP 
-GET
-!!!!
+FILE FTP GET!!!!

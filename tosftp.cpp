@@ -65,7 +65,6 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 	int argCount;
 	_argList = CommandLineToArgvW(GetCommandLineW(), &argCount);
 	if (_argList == nullptr || argCount < 3) {
-		// MessageBoxW(NULL, L"Unable to parse command line. Use tosftp.exe actions.ini servers.ini", L"Error", MB_OK);
 		goto lab_exit;
 	}
 
@@ -82,7 +81,8 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 	}
 	int filesTransferedCounter = 0;
 
-	HWND hProgressBar = pbarCreate(hInstance, totalFilesToTransfer);
+	HWND hProgressBar = pbarCreate(hInstance, totalFilesToTransfer+1);
+	pbarStep(hProgressBar);
 
 	for (int iconn = 0; iconn < _connectionsNumber; iconn++) { // Iterating through transfer (connection) sections...
 		wchar_t action[PROFILE_STRING_BUFFER + 1];
@@ -100,11 +100,9 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 		int transferMode;
 		if (wcscmp(_mode, L"FTP") == 0) {
 			transferMode = 1;
-		}
-		else if ((wcscmp(_mode, L"SSH") == 0) || (wcscmp(_mode, L"SFTP") == 0)) {
+		} else if ((wcscmp(_mode, L"SSH") == 0) || (wcscmp(_mode, L"SFTP") == 0)) {
 			transferMode = 2;
-		}
-		else {
+		} else {
 			writeErrorIntoIniFile(_connections[iconn]);
 			continue;
 		}
@@ -112,8 +110,9 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 		wchar_t localDir[PROFILE_STRING_BUFFER + 2]; // A local directory to read file from / write files to
 		status = GetPrivateProfileStringW(_connections[iconn], L"LocalDir", NULL, localDir, PROFILE_STRING_BUFFER, _argList[1]);
 		if (status <= 0 || status >= PROFILE_STRING_BUFFER - 2) {
-			writeErrorIntoIniFile(_connections[iconn]);
-			continue;
+			localDir[0] = L'\x0';
+			//writeErrorIntoIniFile(_connections[iconn]);
+			//continue;
 		}
 		appendDirectoryNameWithEndingSlash(localDir, L'\\');
 
@@ -135,11 +134,9 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 		int actionCode;
 		if (wcscmp(action, L"PUT") == 0) {
 			actionCode = 2; // Upload
-		}
-		else if (wcscmp(action, L"GET") == 0) {
+		} else if (wcscmp(action, L"GET") == 0) {
 			actionCode = 1; // Download
-		}
-		else if (wcscmp(action, L"DEL") == 0) {
+		} else if (wcscmp(action, L"DEL") == 0) {
 			actionCode = 3; // Delete
 		} else {
 			continue;
@@ -164,22 +161,19 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 		appendDirectoryNameWithEndingSlash(fullRemoteDir, L'/');
 		if( remoteDir[0] != L'/' ) {
 			wcscat(fullRemoteDir, remoteDir);
-		}
-		else {
+		} else {
 			wcscat(fullRemoteDir, &remoteDir[1]);
 		}
 		char remoteDirMultiByte[PROFILE_STRING_BUFFER*2 + 1];
 		WideCharToMultiByte(CP_ACP, 0, fullRemoteDir, -1, remoteDirMultiByte, PROFILE_STRING_BUFFER*2, &default_char, NULL);
-		//MessageBoxA(NULL, remoteDirMultiByte, "!!!!", MB_OK);
 
 		int initStatus = -1;
-		if (transferMode == 1) { // FTP
+		if (transferMode == 1) {		// FTP
 			int credentialsStatus = ftpSetCredentials(serverMultiByte, userMultiByte, passwordMultiByteDecrypted, _port);
 			if (credentialsStatus >= 0) {
 				initStatus = ftpInit();
 			}
-		}
-		else { // SSH
+		} else {		// SSH
 			int credentialsStatus = sftpSetCredentials(serverMultiByte, userMultiByte, passwordMultiByteDecrypted);
 			if (credentialsStatus >= 0) {
 				initStatus = sftpInit();
@@ -203,7 +197,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 		std::vector<std::wstring> errorTexts;
 
 		for (int ifile = 0; ifile < _filesNumber; ifile++) {
-			if (actionCode == 2) { 				// Uploading...
+			if (actionCode == 2) { 			// Uploading...
 				wchar_t srcPath[PROFILE_STRING_BUFFER * 2 + 1];
 				wcscpy(srcPath, localDir);
 				wchar_t *fileName = getPtrToFileName(_fileNames[ifile]);
@@ -218,17 +212,16 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 				WideCharToMultiByte(CP_ACP, 0, _fileNames[ifile], -1, fileNameMultiByte, PROFILE_STRING_BUFFER, &default_char, NULL);
 
 				int error;
-				if (transferMode == 1) {			// FTP
+				if (transferMode == 1) {	// FTP
 					status = ftpUpload(srcPathMultiByte, fileNameMultiByte, remoteDirMultiByte);
 					ftpGetLastError(&error, NULL, NULL);
-				} else {							// SSH FTP
+				} else {					// SSH FTP
 					status = sftpUpload(srcPathMultiByte, fileNameMultiByte, remoteDirMultiByte);
 					sftpGetLastError(&error, NULL, NULL);
 				}
 				errors[ifile] = (status == 0) ? L'+' : L'-';
 				errorTexts.push_back(_errorMessages.find(error)->second);
-			}
-			else if (actionCode == 1) { 		// Downloading...
+			} else if (actionCode == 1) { 	// Downloading...
 				wchar_t destPath[PROFILE_STRING_BUFFER * 2 + 1];
 				wcscpy(destPath, localDir);
 				wchar_t *fileName = getPtrToFileName(_fileNames[ifile]);
@@ -242,10 +235,10 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 				WideCharToMultiByte(CP_ACP, 0, _fileNames[ifile], -1, fileNameMultiByte, PROFILE_STRING_BUFFER, &default_char, NULL);
 
 				int error;
-				if (transferMode == 1) {				//	FTP
+				if (transferMode == 1) {	//	FTP
 					status = ftpDownload(destPathMultiByte, fileNameMultiByte, remoteDirMultiByte);
 					ftpGetLastError(&error, NULL, NULL);
-				} else {								// SSH FTP
+				} else {					// SSH FTP
 					status = sftpDownload(destPathMultiByte, fileNameMultiByte, remoteDirMultiByte);
 					sftpGetLastError(&error, NULL, NULL);
 				}
@@ -257,11 +250,10 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 				WideCharToMultiByte(CP_ACP, 0, _fileNames[ifile], -1, fileNameMultiByte, PROFILE_STRING_BUFFER, &default_char, NULL);
 
 				int error;
-				if (transferMode == 1) {			// FTP
+				if (transferMode == 1) {	// FTP
 					status = ftpDelete(fileNameMultiByte, remoteDirMultiByte);
 					ftpGetLastError(&error, NULL, NULL);
-				}
-				else {								// SSH FTP
+				} else {					// SSH FTP
 					status = sftpDelete(fileNameMultiByte, remoteDirMultiByte);
 					sftpGetLastError(&error, NULL, NULL);
 				}
@@ -273,10 +265,9 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 		}
 		writeResultIntoIniFile(_connections[iconn], errors, errorTexts);
 
-		if (transferMode == 1) { 			// FTP
+		if (transferMode == 1) { 	// FTP
 			ftpClose();
-		}
-		else {							// SFTP
+		} else {					// SFTP
 			sftpClose();
 		}
 	}
@@ -466,10 +457,10 @@ static void deleteSpacesFromString(wchar_t* str)
 
 static wchar_t *getPtrToFileName(wchar_t* path)
 {
-	wchar_t *ptr = path;
+	wchar_t *ptr = &path[0];
 
 	size_t len = wcslen(path);
-	for (unsigned int i = len - 2; i >= 0; i--) { // Deleting from the beginning
+	for (int i = len - 2; i >= 0; i--) { // Starting from the end...
 		if ( (path[i] == L'\\' || path[i] == L'/') && (path[i+1] != L'\\' && path[i+1] != L'/') ) {
 			ptr = &path[i+1];
 			break;
