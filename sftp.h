@@ -21,7 +21,11 @@ int sftpDownload( char *dstFileName, 				// A file name to save the downloaded f
 	char *srcFileName, 								// A file to download
 	char *srcDirectory); 							// The directory to find the file at the server
 
-// Test is a file exists at a server. "1" - yes, "0" - no, "-1" - error.
+
+int sftpDelete(char *dstFileName, 
+	char *dstDirectory);
+	
+	// Test is a file exists at a server. "1" - yes, "0" - no, "-1" - error.
 // The connection credentials must be set earlier...
 int sftpTest( char *fileName, 					// A file name to test
 	char *directory, 							// A server directory to test in

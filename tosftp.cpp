@@ -139,7 +139,9 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 		else if (wcscmp(action, L"GET") == 0) {
 			actionCode = 1; // Download
 		}
-		else {
+		else if (wcscmp(action, L"DEL") == 0) {
+			actionCode = 3; // Delete
+		} else {
 			continue;
 		}
 
@@ -201,7 +203,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 		std::vector<std::wstring> errorTexts;
 
 		for (int ifile = 0; ifile < _filesNumber; ifile++) {
-			if (actionCode == 2) { // Uploading...
+			if (actionCode == 2) { 				// Uploading...
 				wchar_t srcPath[PROFILE_STRING_BUFFER * 2 + 1];
 				wcscpy(srcPath, localDir);
 				wchar_t *fileName = getPtrToFileName(_fileNames[ifile]);
@@ -219,15 +221,14 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 				if (transferMode == 1) {			// FTP
 					status = ftpUpload(srcPathMultiByte, fileNameMultiByte, remoteDirMultiByte);
 					ftpGetLastError(&error, NULL, NULL);
-				}
-				else {								// SSH FTP
+				} else {							// SSH FTP
 					status = sftpUpload(srcPathMultiByte, fileNameMultiByte, remoteDirMultiByte);
 					sftpGetLastError(&error, NULL, NULL);
 				}
 				errors[ifile] = (status == 0) ? L'+' : L'-';
 				errorTexts.push_back(_errorMessages.find(error)->second);
 			}
-			else if (actionCode == 1) { // Downloading...
+			else if (actionCode == 1) { 		// Downloading...
 				wchar_t destPath[PROFILE_STRING_BUFFER * 2 + 1];
 				wcscpy(destPath, localDir);
 				wchar_t *fileName = getPtrToFileName(_fileNames[ifile]);
@@ -244,9 +245,24 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 				if (transferMode == 1) {				//	FTP
 					status = ftpDownload(destPathMultiByte, fileNameMultiByte, remoteDirMultiByte);
 					ftpGetLastError(&error, NULL, NULL);
-				}
-				else {												// SSH FTP
+				} else {								// SSH FTP
 					status = sftpDownload(destPathMultiByte, fileNameMultiByte, remoteDirMultiByte);
+					sftpGetLastError(&error, NULL, NULL);
+				}
+				errors[ifile] = (status == 0) ? L'+' : L'-';
+				errorTexts.push_back(_errorMessages.find(error)->second);
+			} else if( actionCode == 3 ) { 		// Delete
+				substituteCharInString(_fileNames[ifile], '\\', '/');
+				char fileNameMultiByte[PROFILE_STRING_BUFFER + 1];
+				WideCharToMultiByte(CP_ACP, 0, _fileNames[ifile], -1, fileNameMultiByte, PROFILE_STRING_BUFFER, &default_char, NULL);
+
+				int error;
+				if (transferMode == 1) {			// FTP
+					status = ftpDelete(fileNameMultiByte, remoteDirMultiByte);
+					ftpGetLastError(&error, NULL, NULL);
+				}
+				else {								// SSH FTP
+					status = sftpDelete(fileNameMultiByte, remoteDirMultiByte);
 					sftpGetLastError(&error, NULL, NULL);
 				}
 				errors[ifile] = (status == 0) ? L'+' : L'-';

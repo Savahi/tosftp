@@ -89,6 +89,15 @@ int sftpTest(char *fileName, char *directory, unsigned long int *size)
 }
 
 
+int sftpDelete(char *dstFileName, char *dstDirectory) 
+{
+	_sftpErrorCode = 0;
+	_sshErrorCode = SSH_NO_ERROR;
+
+	return _sftpErrorCode;
+}
+
+
 int sftpUpload(char *srcFileName, char *dstFileName, char *dstDirectory ) 
 {
 	sftp_file dstFile;
@@ -307,4 +316,3 @@ static int validateDirectories(char *remoteAddr) {
 	}
 	return returnValue;
 }
-

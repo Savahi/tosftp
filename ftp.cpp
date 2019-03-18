@@ -71,6 +71,48 @@ int ftpTest(char *fileName, char *directory, unsigned long int *size)
 }
 
 
+int ftpDelete(char *dstFileName, char *dstDirectory ) 
+{
+	_ftpErrorCode = 0;
+	_winInetErrorCode = 0;
+
+	if (createRemoteAddr(dstFileName, dstDirectory, NULL, NULL, NULL) == -1) {
+		_ftpErrorCode = -1;
+	} else {
+		int index = strlen(_remoteAddr) - 1;
+		if( _remoteAddr[index] != '*' ) {
+			bool status = FtpDeleteFileA(_hFtpSession, _remoteAddr);
+			if (!status) {
+				_ftpErrorCode = -1;
+			}			
+		} else {
+			WIN32_FIND_DATA fd;
+			HINTERNET hFtpSession = InternetConnectA(_hInternet, _server, 
+				INTERNET_DEFAULT_FTP_PORT, _user, _password, INTERNET_SERVICE_FTP, INTERNET_FLAG_PASSIVE, 0);
+			if (hFtpSession) {
+				HINTERNET hFind = FtpFindFirstFileA(_hFtpSession,_remoteAddr,&fd,0,0);
+				if( hFind != NULL ) {
+					bool findNext;
+					do {
+						if( fd.dwFileAttributes != FILE_ATTRIBUTE_DIRECTORY ) {
+							bool status = FtpDeleteFileA(_hFtpSession, _remoteAddr);
+							if (!status) {
+								_ftpErrorCode = -1;
+							}			
+						}
+						findNext = InternetFindNextFileA(hFind, &fd);
+					} while( findNext );
+				}
+				InternetCloseHandle(hFtpSession);
+			} else {
+				_ftpErrorCode = -1;
+			}
+		}
+	}
+	return _ftpErrorCode;
+}
+
+
 int ftpUpload(char *srcFileName, char *dstFileName, char *dstDirectory ) 
 {
 	_ftpErrorCode = 0;
@@ -218,4 +260,3 @@ static int validateDirectories( char *remoteAddr ) {
 	}
 	return returnValue;
 }
-

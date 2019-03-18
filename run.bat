@@ -1,2 +1,2 @@
-tosftp.exe "C:\Users\lgirs\Desktop\papa\tosftp\actions.ini" "C:\Users\lgirs\Desktop\papa\tosftp\servers.ini"
+tosftp.exe "E:\development\tosftp\actions.ini" "E:\development\tosftp\servers.ini"
 
