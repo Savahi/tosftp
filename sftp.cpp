@@ -36,6 +36,8 @@ static char *_sshErrorText = NULL;
 
 static long int _timeOut = -1L;
 
+static int validateDirectories(char *remoteAddr);
+
 static int createRemoteAddr(char *fileName, char *directory,
 	char *server, char *user, char *password)
 {
@@ -100,36 +102,43 @@ int sftpUpload(char *srcFileName, char *dstFileName, char *dstDirectory )
 	if (createRemoteAddr(dstFileName, dstDirectory, NULL, NULL, NULL) == -1) {
 		_sftpErrorCode = -1;
 	} else {
-		dstFile = sftp_open(_sftpSession, _remoteAddr, O_WRONLY | O_CREAT | O_TRUNC, 0000700);
-		if (dstFile == NULL) {
-			_sftpErrorCode = SFTP_ERROR_FAILED_TO_WRITE_REMOTE;
-		} else {
-			srcFile = open( srcFileName, O_RDONLY );
-			if( srcFile < 0 ) {
-				_sftpErrorCode = SFTP_ERROR_FAILED_TO_READ_LOCAL;
-			} else {
-				for (;;) {
-					bytesRead = read(srcFile, buffer, sizeof(buffer));
-					if (bytesRead < 0) {
-						_sftpErrorCode = SFTP_ERROR_FAILED_TO_READ_LOCAL;		
-						break; // Error
-					}
-					if (bytesRead == 0) {
-						break; // EOF
-					} 
-					bytesWritten = sftp_write(dstFile, buffer, bytesRead);
-					if (bytesWritten != bytesRead) {
-						_sftpErrorCode = SFTP_ERROR_FAILED_TO_WRITE_REMOTE;		
-						break;
-					}
-				}
-				close(srcFile);
+		if (validateDirectories(_remoteAddr) < 0) {
+			_sftpErrorCode = -1;
+		}
+		else {
+			dstFile = sftp_open(_sftpSession, _remoteAddr, O_WRONLY | O_CREAT | O_TRUNC, 0000700);
+			if (dstFile == NULL) {
+				_sftpErrorCode = SFTP_ERROR_FAILED_TO_WRITE_REMOTE;
 			}
-			status = sftp_close(dstFile);
-  			if (status != SSH_OK) {
-				_sftpErrorCode = SFTP_ERROR_FAILED_TO_WRITE_REMOTE;		  			
-  			}
-  		}
+			else {
+				srcFile = open(srcFileName, O_RDONLY);
+				if (srcFile < 0) {
+					_sftpErrorCode = SFTP_ERROR_FAILED_TO_READ_LOCAL;
+				}
+				else {
+					for (;;) {
+						bytesRead = read(srcFile, buffer, sizeof(buffer));
+						if (bytesRead < 0) {
+							_sftpErrorCode = SFTP_ERROR_FAILED_TO_READ_LOCAL;
+							break; // Error
+						}
+						if (bytesRead == 0) {
+							break; // EOF
+						}
+						bytesWritten = sftp_write(dstFile, buffer, bytesRead);
+						if (bytesWritten != bytesRead) {
+							_sftpErrorCode = SFTP_ERROR_FAILED_TO_WRITE_REMOTE;
+							break;
+						}
+					}
+					close(srcFile);
+				}
+				status = sftp_close(dstFile);
+				if (status != SSH_OK) {
+					_sftpErrorCode = SFTP_ERROR_FAILED_TO_WRITE_REMOTE;
+				}
+			}
+		}
   	}
 	return _sftpErrorCode;
 }
@@ -219,7 +228,9 @@ int sftpInit(void) {
 	 	if (status != SSH_OK) { 
 			_sftpErrorCode = -1;
 		} else {
-			status = ssh_userauth_password(_sshSession, _user, _password);
+			ssh_options_set(_sshSession, SSH_OPTIONS_USER, _user);
+			status = ssh_userauth_password(_sshSession, NULL, _password);
+			//status = ssh_userauth_password(_sshSession, _user, _password);
 			if (status != SSH_AUTH_SUCCESS) {
 				_sftpErrorCode = -1;
 			} else { // INITIALIZING SFTP SESSION...
@@ -237,7 +248,7 @@ int sftpInit(void) {
 	}
 
 	if( _sftpErrorCode == -1 ) {
-		sftpClose();
+		; //sftpClose(); // An error arised, that's why the line is commented.
 	}
 	return _sftpErrorCode;
 }
@@ -250,6 +261,7 @@ void sftpClose(void) {
 	if( _sftpSession != NULL ) {
 		sftp_free(_sftpSession);
 	}    
+	_sftpSession = NULL;
 
 	if( _sshSession != NULL ) {
 	    ssh_disconnect(_sshSession);
@@ -271,3 +283,28 @@ int sftpGetLastError(int *sftpErrorCode, int *sshErrorCode, char *sshErrorText) 
 	}
 	return 0;
 }
+
+static int validateDirectories(char *remoteAddr) {
+	int returnValue = 0;
+	char remoteDir[SFTP_MAX_REMOTE_ADDR + 1];
+
+	int remoteAddrLen = strlen(remoteAddr);
+
+	for (int i = 1; i < remoteAddrLen; i++) {
+		if ((remoteAddr[i] == '\\' || remoteAddr[i] == '/') && (remoteAddr[i - 1] != '\\' && remoteAddr[i - 1] != '/')) {
+			strncpy(remoteDir, remoteAddr, i);
+			remoteDir[i] = '\x0';
+
+			sftp_attributes attr = sftp_stat( _sftpSession, remoteDir );
+			if (attr == NULL) {
+				int status = sftp_mkdir(_sftpSession, remoteDir, 0000700);
+				if (status != SSH_OK) {
+					returnValue = -1;
+					break;
+				}
+			} 
+		}
+	}
+	return returnValue;
+}
+

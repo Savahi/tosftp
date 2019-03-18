@@ -167,7 +167,8 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 			wcscat(fullRemoteDir, &remoteDir[1]);
 		}
 		char remoteDirMultiByte[PROFILE_STRING_BUFFER*2 + 1];
-		WideCharToMultiByte(CP_ACP, 0, fullRemoteDirectory, -1, remoteDirMultiByte, PROFILE_STRING_BUFFER*2, &default_char, NULL);
+		WideCharToMultiByte(CP_ACP, 0, fullRemoteDir, -1, remoteDirMultiByte, PROFILE_STRING_BUFFER*2, &default_char, NULL);
+		//MessageBoxA(NULL, remoteDirMultiByte, "!!!!", MB_OK);
 
 		int initStatus = -1;
 		if (transferMode == 1) { // FTP
@@ -216,11 +217,11 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 
 				int error;
 				if (transferMode == 1) {			// FTP
-					status = ftpUpload(srcPathMultiByte, fileNameMultiByte, directoryMultiByte);
+					status = ftpUpload(srcPathMultiByte, fileNameMultiByte, remoteDirMultiByte);
 					ftpGetLastError(&error, NULL, NULL);
 				}
 				else {								// SSH FTP
-					status = sftpUpload(srcPathMultiByte, fileNameMultiByte, directoryMultiByte);
+					status = sftpUpload(srcPathMultiByte, fileNameMultiByte, remoteDirMultiByte);
 					sftpGetLastError(&error, NULL, NULL);
 				}
 				errors[ifile] = (status == 0) ? L'+' : L'-';
@@ -241,11 +242,11 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 
 				int error;
 				if (transferMode == 1) {				//	FTP
-					status = ftpDownload(destPathMultiByte, fileNameMultiByte, directoryMultiByte);
+					status = ftpDownload(destPathMultiByte, fileNameMultiByte, remoteDirMultiByte);
 					ftpGetLastError(&error, NULL, NULL);
 				}
 				else {												// SSH FTP
-					status = sftpDownload(destPathMultiByte, fileNameMultiByte, directoryMultiByte);
+					status = sftpDownload(destPathMultiByte, fileNameMultiByte, remoteDirMultiByte);
 					sftpGetLastError(&error, NULL, NULL);
 				}
 				errors[ifile] = (status == 0) ? L'+' : L'-';
@@ -452,9 +453,9 @@ static wchar_t *getPtrToFileName(wchar_t* path)
 	wchar_t *ptr = path;
 
 	size_t len = wcslen(path);
-	for (unsigned int i = len - 1; i >= 0; i--) { // Deleting from the beginning
-		if (path[i] == L'\\' || path[i] == L'/') {
-			ptr = &path[i];
+	for (unsigned int i = len - 2; i >= 0; i--) { // Deleting from the beginning
+		if ( (path[i] == L'\\' || path[i] == L'/') && (path[i+1] != L'\\' && path[i+1] != L'/') ) {
+			ptr = &path[i+1];
 			break;
 		}
 	}

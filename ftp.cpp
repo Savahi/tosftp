@@ -26,6 +26,8 @@ static long int _timeOut = -1L;
 static HINTERNET _hInternet = NULL;
 static HINTERNET _hFtpSession = NULL;
 
+static int validateDirectories(char *);
+
 static int createRemoteAddr(char *fileName, char *directory, char *server, char *user, char *password)
 {
 	if( server != NULL && user != NULL && password != NULL ) {	
@@ -77,9 +79,11 @@ int ftpUpload(char *srcFileName, char *dstFileName, char *dstDirectory )
 	if (createRemoteAddr(dstFileName, dstDirectory, NULL, NULL, NULL) == -1) {
 		_ftpErrorCode = -1;
 	} else {
-		DWORD status = FtpPutFileA(_hFtpSession, srcFileName, _remoteAddr, FTP_TRANSFER_TYPE_BINARY, 0); 
-		if( !status ) {
-			_ftpErrorCode = -1;
+		if (validateDirectories(_remoteAddr) >= 0) {
+			DWORD status = FtpPutFileA(_hFtpSession, srcFileName, _remoteAddr, FTP_TRANSFER_TYPE_BINARY, 0);
+			if (!status) {
+				_ftpErrorCode = -1;
+			}
 		}
 	}
 	return _ftpErrorCode;
@@ -179,3 +183,39 @@ int ftpGetLastError(int *ftpErrorCode, DWORD *winInetErrorCode, char *winInetErr
 	}
 	return 0;
 }
+
+
+static int validateDirectories( char *remoteAddr ) {
+	int returnValue = 0;
+	char remoteDir[FTP_MAX_REMOTE_ADDR + 1];
+	WIN32_FIND_DATAA findFileData;
+
+	int remoteAddrLen = strlen(remoteAddr);
+
+	for (int i = 1; i < remoteAddrLen; i++) {
+		if ( (remoteAddr[i] == '\\' || remoteAddr[i] == '/') && (remoteAddr[i-1] != '\\' && remoteAddr[i-1] != '/') ) {
+			strncpy(remoteDir, remoteAddr, i);
+			remoteDir[i] = '\x0';
+
+			HINTERNET hFtpSession = InternetConnectA(_hInternet, _server, 
+				INTERNET_DEFAULT_FTP_PORT, _user, _password, INTERNET_SERVICE_FTP, INTERNET_FLAG_PASSIVE, 0);
+			if (hFtpSession) {
+				bool status;
+				if (FtpFindFirstFileA(hFtpSession, remoteDir, &findFileData, 0, NULL) == NULL) { // The directory wasn't found...
+					status = FtpCreateDirectoryA(hFtpSession, remoteDir);
+				}
+				InternetCloseHandle(hFtpSession);
+				if (!status) {
+					returnValue = -1;
+					break;
+				}
+			}
+			else {
+				returnValue = -1;
+				break;
+			}
+		}
+	}
+	return returnValue;
+}
+
