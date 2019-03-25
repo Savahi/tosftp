@@ -119,8 +119,9 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 		wchar_t remoteDir[PROFILE_STRING_BUFFER + 2]; // A remote directory to read file from / write files to
 		status = GetPrivateProfileStringW(_connections[iconn], L"RemoteDir", NULL, remoteDir, PROFILE_STRING_BUFFER, _argList[1]);
 		if (status <= 0 || status >= PROFILE_STRING_BUFFER - 2) {
-			writeErrorIntoIniFile(_connections[iconn]);
-			continue;
+			remoteDir[0] = L'\x0';
+			// writeErrorIntoIniFile(_connections[iconn]);
+			// continue;
 		}
 		appendDirectoryNameWithEndingSlash(remoteDir, L'/');
 
@@ -494,27 +495,42 @@ static void writeResultIntoIniFile(wchar_t *sectionName, const wchar_t *errors, 
 	WritePrivateProfileStringW(sectionName, L"Reason", errorTextsCombined.c_str(), _argList[1]);
 }
 
-static int decrypt(char *src, char *dst) {
-	char symbolBuffer[3];
+static int decrypt(char *src, char *dst1b) {
+	static wchar_t dst[PROFILE_STRING_BUFFER + 1];
+    const char *xorkey1b= "_23ken08SPIDER1970&%_23ken08SPIDER1970&%\0";
+    int xorkey1bLen = strlen(xorkey1b);
+    wchar_t *xorkey = (wchar_t *)xorkey1b;
+    int xorkeyLen = (xorkey1bLen-1)/2;
 
 	int passwordLength = strlen(src);
-	if (passwordLength % 2) {
+	if (passwordLength % 4) {
 		return -1;
 	}
-	int halfLength = passwordLength / 2;
 
-	symbolBuffer[2] = '\x0';
-	for (int iSrc = 0, iDst = 0; iSrc < passwordLength; iSrc += 2, iDst++) {
-		symbolBuffer[0] = src[iSrc];
+	char symbolBuffer[5];
+	symbolBuffer[4] = '\x0';
+	
+	for (int iSrc = 0, iDst = 0; iSrc < passwordLength ; iSrc += 4, iDst++) {
+		symbolBuffer[0] = src[iSrc + 0];
 		symbolBuffer[1] = src[iSrc + 1];
-		int dec;
-		int status = sscanf(symbolBuffer, "%X", &dec);
+		symbolBuffer[2] = src[iSrc + 2];
+		symbolBuffer[3] = src[iSrc + 3];
+		unsigned short dec;
+		int status = sscanf(symbolBuffer, "%hx", &dec);
+		//cout << symbolBuffer << ", dec=" << dec << endl;
 		if (status != 1) {
 			return -1;
 		}
-		dst[iDst] = (char)(dec ^ 0xFF);
+		if( iDst < xorkeyLen ) {
+			dst[iDst] = (wchar_t)(dec ^ (unsigned short)xorkey[iDst]);			
+		} else {
+			dst[iDst] = (wchar_t)(dec);						
+		}
 	}
-	dst[halfLength] = '\x0';
+	dst[passwordLength/4] = L'\x0';
+	
+	char default_char = '?';
+	WideCharToMultiByte(CP_ACP, 0, dst, -1, dst1b, PROFILE_STRING_BUFFER, &default_char, NULL);
 	return 0;
 }
 

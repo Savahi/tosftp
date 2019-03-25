@@ -247,7 +247,7 @@ static int validateDirectories( char *remoteAddr ) {
 			HINTERNET hFtpSession = InternetConnectA(_hInternet, _server, 
 				INTERNET_DEFAULT_FTP_PORT, _user, _password, INTERNET_SERVICE_FTP, INTERNET_FLAG_PASSIVE, 0);
 			if (hFtpSession) {
-				bool status;
+				bool status = true;
 				if (FtpFindFirstFileA(hFtpSession, remoteDir, &findFileData, 0, NULL) == NULL) { // The directory wasn't found...
 					status = FtpCreateDirectoryA(hFtpSession, remoteDir);
 				}
