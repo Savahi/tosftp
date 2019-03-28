@@ -27,6 +27,9 @@ static HINTERNET _hInternet = NULL;
 static HINTERNET _hFtpSession = NULL;
 
 static int validateDirectories(char *);
+static bool dstDirIsValidated=false;
+
+static bool findCharsInString(char* str, char* chars);
 
 static int createRemoteAddr(char *fileName, char *directory, char *server, char *user, char *password)
 {
@@ -118,7 +121,7 @@ int ftpDelete(char *dstFileName, char *dstDirectory )
 }
 
 
-int ftpUpload(char *srcFileName, char *dstFileName, char *dstDirectory ) 
+int ftpUpload(char *srcFileName, char *dstFileName, char *dstDirectory, bool createDstDirIfNotExists ) 
 {
 	_ftpErrorCode = 0;
 	_winInetErrorCode = 0;
@@ -126,7 +129,19 @@ int ftpUpload(char *srcFileName, char *dstFileName, char *dstDirectory )
 	if (createRemoteAddr(dstFileName, dstDirectory, NULL, NULL, NULL) == -1) {
 		_ftpErrorCode = -1;
 	} else {
-		if (validateDirectories(_remoteAddr) >= 0) {
+		int directoryValidated = false;
+		if (!createDstDirIfNotExists && !findCharsInString(dstFileName, "/\\")) {
+			directoryValidated = true;
+		}
+		else if( dstDirIsValidated && !findCharsInString(dstFileName, "/\\") ) {
+			directoryValidated = true;
+		}
+		else {
+			if (validateDirectories(_remoteAddr) >= 0) {
+				directoryValidated = true;
+			}
+		}
+		if (directoryValidated) {
 			DWORD status = FtpPutFileA(_hFtpSession, srcFileName, _remoteAddr, FTP_TRANSFER_TYPE_BINARY, 0);
 			if (!status) {
 				_ftpErrorCode = -1;
@@ -184,6 +199,8 @@ int ftpSetCredentials(char *server, char *user, char *password, int port) {
 int ftpInit(void) {
 	_ftpErrorCode = 0;
 	_winInetErrorCode = 0;
+
+	dstDirIsValidated = false; 
 
 	_hInternet = InternetOpenA(NULL, INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
 	if (!_hInternet) {
@@ -263,5 +280,24 @@ static int validateDirectories( char *remoteAddr ) {
 			}
 		}
 	}
+
+	if( returnValue == 0 ) {
+		dstDirIsValidated = true;
+	}
 	return returnValue;
+}
+
+
+static bool findCharsInString(char* str, char* chars)
+{
+	int strLen = strlen(str);
+	int charsLen = strlen(chars);
+	for (unsigned int s = 0; s < strLen; s++) {
+		for (unsigned int c = 0; c < charsLen; c++) {
+			if (str[s] == chars[c]) {
+				return true;
+			}
+		}
+	}
+	return false;
 }

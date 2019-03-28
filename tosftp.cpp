@@ -43,7 +43,7 @@ static int _filesNumber = 0;
 static int readFileNames(wchar_t *fileNamesBuffer);
 
 static void deleteSpacesFromString(wchar_t* str);
-static bool isEmptyString(wchar_t* str, bool comma_is_empty_char);
+static bool isEmptyString(wchar_t* str, bool comma_is_empty_char=false);
 static void deleteCharFromString(wchar_t* str, int pos);
 static void substituteCharInString(wchar_t*str, wchar_t charToFind, wchar_t charToReplaceWith);
 static wchar_t *getPtrToFileName(wchar_t* path);
@@ -81,19 +81,24 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 	}
 	int filesTransferedCounter = 0;
 
-	HWND hProgressBar = pbarCreate(hInstance, totalFilesToTransfer+1);
+	HWND progressBarParent=NULL;
+	int handle = GetPrivateProfileIntW(_connections[0], L"Handle", 0, _argList[1]);
+	if( handle != 0 ) {
+		progressBarParent = (HWND)handle;
+	}
+	HWND hProgressBar = pbarCreate(hInstance, totalFilesToTransfer+1, progressBarParent);
 	pbarStep(hProgressBar);
 
 	for (int iconn = 0; iconn < _connectionsNumber; iconn++) { // Iterating through transfer (connection) sections...
 		wchar_t action[PROFILE_STRING_BUFFER + 1];
 		status = GetPrivateProfileStringW(_connections[iconn], L"Action", NULL, action, PROFILE_STRING_BUFFER, _argList[1]);
 		if (status <= 0 || status >= PROFILE_STRING_BUFFER - 2) {
-			writeErrorIntoIniFile(_connections[iconn]);
+			writeErrorIntoIniFile(_connections[iconn], L"Can't read Action field");
 			continue;
 		}
 
 		if (readConnection(_argList[2], _connections[iconn]) == -1) { // Reading details of the connection
-			writeErrorIntoIniFile(_connections[iconn]);
+			writeErrorIntoIniFile(_connections[iconn], L"Can't read the Details of the connection");
 			continue;
 		}
 
@@ -103,7 +108,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 		} else if ((wcscmp(_mode, L"SSH") == 0) || (wcscmp(_mode, L"SFTP") == 0)) {
 			transferMode = 2;
 		} else {
-			writeErrorIntoIniFile(_connections[iconn]);
+			writeErrorIntoIniFile(_connections[iconn], L"Transfer protocol to use is not recognized");
 			continue;
 		}
 
@@ -116,19 +121,27 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 		}
 		appendDirectoryNameWithEndingSlash(localDir, L'\\');
 
+		bool remoteDirIsEmpty = false;
 		wchar_t remoteDir[PROFILE_STRING_BUFFER + 2]; // A remote directory to read file from / write files to
 		status = GetPrivateProfileStringW(_connections[iconn], L"RemoteDir", NULL, remoteDir, PROFILE_STRING_BUFFER, _argList[1]);
-		if (status <= 0 || status >= PROFILE_STRING_BUFFER - 2) {
+		if (status >= PROFILE_STRING_BUFFER - 2) {
+			writeErrorIntoIniFile(_connections[iconn], L"Failed to read remote directory");
+			continue;
+		}
+		if (status <= 0) {
 			remoteDir[0] = L'\x0';
-			// writeErrorIntoIniFile(_connections[iconn]);
-			// continue;
+			remoteDirIsEmpty = true;
+		}
+		else if (isEmptyString(remoteDir)) {
+			remoteDir[0] = L'\x0';
+			remoteDirIsEmpty = true;
 		}
 		appendDirectoryNameWithEndingSlash(remoteDir, L'/');
 
 		wchar_t fileNamesBuffer[PROFILE_STRING_BUFFER + 1]; // A buffer to read the list of files into
 		status = GetPrivateProfileStringW(_connections[iconn], L"FileNames", NULL, fileNamesBuffer, PROFILE_STRING_BUFFER, _argList[1]);
 		if (status <= 0 || status >= PROFILE_STRING_BUFFER - 2) {
-			writeErrorIntoIniFile(_connections[iconn]);
+			writeErrorIntoIniFile(_connections[iconn], L"Failed to read file names");
 			continue;
 		}
 
@@ -153,7 +166,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 		char passwordMultiByteDecrypted[PROFILE_STRING_BUFFER + 1];
 		status = decrypt(passwordMultiByte, passwordMultiByteDecrypted);
 		if (status == -1) {
-			writeErrorIntoIniFile(_connections[iconn]);
+			writeErrorIntoIniFile(_connections[iconn], L"Can't decrypt the password");
 			continue;
 		}
 
@@ -181,12 +194,12 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 			}
 		}
 		if (initStatus < 0) {
-			writeErrorIntoIniFile(_connections[iconn]);
+			writeErrorIntoIniFile(_connections[iconn], L"Can't init transfer library");
 			continue;
 		}
 
 		if (readFileNames(fileNamesBuffer) <= 0) {
-			writeErrorIntoIniFile(_connections[iconn]);
+			writeErrorIntoIniFile(_connections[iconn], L"Can't read file names to transfer");
 			continue;
 		}
 
@@ -214,10 +227,10 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 
 				int error;
 				if (transferMode == 1) {	// FTP
-					status = ftpUpload(srcPathMultiByte, fileNameMultiByte, remoteDirMultiByte);
+					status = ftpUpload(srcPathMultiByte, fileNameMultiByte, remoteDirMultiByte, !remoteDirIsEmpty);
 					ftpGetLastError(&error, NULL, NULL);
 				} else {					// SSH FTP
-					status = sftpUpload(srcPathMultiByte, fileNameMultiByte, remoteDirMultiByte);
+					status = sftpUpload(srcPathMultiByte, fileNameMultiByte, remoteDirMultiByte, !remoteDirIsEmpty);
 					sftpGetLastError(&error, NULL, NULL);
 				}
 				errors[ifile] = (status == 0) ? L'+' : L'-';
@@ -348,7 +361,7 @@ int readConnection(wchar_t *fileName, wchar_t *connectionName)
 	if (status <= 0 || status >= PROFILE_STRING_BUFFER - 2) {
 		return -1;
 	}
-	status = GetPrivateProfileStringW(connectionName, L"Password", NULL, _password, PROFILE_STRING_BUFFER, fileName);
+	status = GetPrivateProfileStringW(connectionName, L"Password2", NULL, _password, PROFILE_STRING_BUFFER, fileName);
 	if (status <= 0 || status >= PROFILE_STRING_BUFFER - 2) {
 		return -1;
 	}
@@ -401,11 +414,14 @@ static void substituteCharInString(wchar_t*str, wchar_t charToFind, wchar_t char
 static bool isEmptyString(wchar_t* str, bool comma_is_empty_char)
 {
 	for (unsigned int i = 0; i < wcslen(str); i++) {
-		if (str[i] != L' ' && str[i] != L'\r' && str[i] != L'\n' && (str[i] != L',' && !comma_is_empty_char)) {
-			return true;
+		if (str[i] != L' ' && str[i] != L'\r' && str[i] != L'\n') {
+			return false;
+		}
+		if( str[i] == L',' && !comma_is_empty_char) {
+			return false;
 		}
 	}
-	return false;
+	return true;
 }
 
 static void deleteCharFromString(wchar_t* str, int pos)
@@ -497,10 +513,10 @@ static void writeResultIntoIniFile(wchar_t *sectionName, const wchar_t *errors, 
 
 static int decrypt(char *src, char *dst1b) {
 	static wchar_t dst[PROFILE_STRING_BUFFER + 1];
-    const char *xorkey1b= "_23ken08SPIDER1970&%_23ken08SPIDER1970&%\0";
-    int xorkey1bLen = strlen(xorkey1b);
-    wchar_t *xorkey = (wchar_t *)xorkey1b;
-    int xorkeyLen = (xorkey1bLen-1)/2;
+	const char *xorkey1b= "_23ken08SPIDER1970&%_23ken08SPIDER1970&%\0";
+	int xorkey1bLen = strlen(xorkey1b);
+	wchar_t *xorkey = (wchar_t *)xorkey1b;
+	int xorkeyLen = (xorkey1bLen-1)/2;
 
 	int passwordLength = strlen(src);
 	if (passwordLength % 4) {
@@ -553,6 +569,7 @@ static int getTotalNumberOfFilesToTransfer(void)
 	}
 	return filesTotal;
 }
+
 
 static void appendDirectoryNameWithEndingSlash(wchar_t *dirName, wchar_t slash)
 {

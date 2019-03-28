@@ -37,6 +37,9 @@ static char *_sshErrorText = NULL;
 static long int _timeOut = -1L;
 
 static int validateDirectories(char *remoteAddr);
+static bool dstDirIsValidated=false;
+
+static bool findCharsInString(char* str, char* chars);
 
 static int createRemoteAddr(char *fileName, char *directory,
 	char *server, char *user, char *password)
@@ -98,7 +101,7 @@ int sftpDelete(char *dstFileName, char *dstDirectory)
 }
 
 
-int sftpUpload(char *srcFileName, char *dstFileName, char *dstDirectory ) 
+int sftpUpload( char *srcFileName, char *dstFileName, char *dstDirectory, bool createDstDirIfNotExists ) 
 {
 	sftp_file dstFile;
 	char buffer[TRANSFER_BUFFER_SIZE];
@@ -111,7 +114,19 @@ int sftpUpload(char *srcFileName, char *dstFileName, char *dstDirectory )
 	if (createRemoteAddr(dstFileName, dstDirectory, NULL, NULL, NULL) == -1) {
 		_sftpErrorCode = -1;
 	} else {
-		if (validateDirectories(_remoteAddr) < 0) {
+		int directoryValidated = false;
+		if (!createDstDirIfNotExists && !findCharsInString(dstFileName, "/\\")) {
+			directoryValidated = true;
+		}
+		else if( dstDirIsValidated && !findCharsInString(dstFileName, "/\\") ) {
+			directoryValidated = true;
+		}
+		else {
+			if (validateDirectories(_remoteAddr) >= 0) {
+				directoryValidated = true;
+			}
+		}
+		if (!directoryValidated) {
 			_sftpErrorCode = -1;
 		}
 		else {
@@ -227,6 +242,8 @@ int sftpInit(void) {
 	_sftpErrorCode = 0;
 	_sshErrorCode = SSH_NO_ERROR;
 
+	dstDirIsValidated = false; 
+
 	_sshSession = ssh_new();
 	if (_sshSession == NULL) {
 		_sftpErrorCode = -1;
@@ -257,8 +274,8 @@ int sftpInit(void) {
 	}
 
 	if( _sftpErrorCode == -1 ) {
-		; //sftpClose(); // An error arised, that's why the line is commented.
-	}
+		sftpClose(); // An error arised, that's why the line is commented.
+	} 
 	return _sftpErrorCode;
 }
 
@@ -306,6 +323,7 @@ static int validateDirectories(char *remoteAddr) {
 
 			sftp_attributes attr = sftp_stat( _sftpSession, remoteDir );
 			if (attr == NULL) {
+				// MessageBoxA( NULL, remoteDir, "HERE", MB_OK );
 				int status = sftp_mkdir(_sftpSession, remoteDir, 0000700);
 				if (status != SSH_OK) {
 					returnValue = -1;
@@ -314,5 +332,23 @@ static int validateDirectories(char *remoteAddr) {
 			} 
 		}
 	}
+	if( returnValue == 0 ) {
+		dstDirIsValidated = true;
+	}
 	return returnValue;
+}
+
+
+static bool findCharsInString(char* str, char* chars)
+{
+	int strLen = strlen(str);
+	int charsLen = strlen(chars);
+	for (unsigned int s = 0; s < strLen; s++) {
+		for (unsigned int c = 0; c < charsLen; c++) {
+			if (str[s] == chars[c]) {
+				return true;
+			}
+		}
+	}
+	return false;
 }

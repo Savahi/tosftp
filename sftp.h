@@ -12,9 +12,9 @@
 // Uploads a file to a server. Returns negative value if failed, 0 if ok.
 // The connection credentials must be set earlier...
 int sftpUpload( char *srcFileName,					// A file to transfer to a server
-	char *dstFileName, 								// A name for the file when it is stored at the server
-	char *dstDirectory); 							// A directory to transfer the file into. For Linux servers starts with '/'
-
+	char *dstFileName, 						// A name for the file when it is stored at the server
+	char *dstDirectory, 						// A directory to transfer the file into. For Linux servers starts with '/'
+	bool createDstDirIfNotExists);					// Create destination directory if not exists
 // Downloads a file from a server. Returns negative value if failed, 0 if ok.
 // The connection credentials must be set earlier...
 int sftpDownload( char *dstFileName, 				// A file name to save the downloaded file under 
