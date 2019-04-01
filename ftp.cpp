@@ -187,9 +187,10 @@ int ftpSetCredentials(char *server, char *user, char *password, int port) {
 		strcpy( _server, server );
 		strcpy( _user, user );
 		strcpy( _password, password );
-		_port = port;		
-		if( _port < 0 ) {
+		if( port < 0 ) {
 			_port = INTERNET_DEFAULT_FTP_PORT;
+		} else {
+			_port = port;					
 		}
 	}
 	return _ftpErrorCode;
@@ -204,25 +205,27 @@ int ftpInit(void) {
 
 	_hInternet = InternetOpenA(NULL, INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
 	if (!_hInternet) {
-		_ftpErrorCode = -1;
+		_ftpErrorCode = FTP_ERROR_FAILED_TO_OPEN_INTERNET;
 	} else {
 		_hFtpSession = InternetConnectA(_hInternet, _server, INTERNET_DEFAULT_FTP_PORT, _user, _password, INTERNET_SERVICE_FTP, INTERNET_FLAG_PASSIVE, 0);
 		if (!_hFtpSession) {
-			_ftpErrorCode = -1;
+			_ftpErrorCode = FTP_ERROR_FAILED_TO_CONNECT;
 		} 
 	}
 
 	if( _ftpErrorCode != 0 ) {
-		ftpClose();
+		ftpClose(false);
 	}
 
 	return _ftpErrorCode;
 }
 
 
-void ftpClose(void) {
-	_ftpErrorCode = 0;
-	_winInetErrorCode = 0;
+void ftpClose(bool resetErrors) {
+	if( resetErrors ) {
+		_ftpErrorCode = 0;
+		_winInetErrorCode = 0;
+	}
 
 	if( _hFtpSession != NULL ) {
 	    InternetCloseHandle(_hFtpSession);

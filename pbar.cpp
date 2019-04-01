@@ -25,6 +25,8 @@ HWND pbarCreate(HINSTANCE hInstance, int stepsNumber, HWND parent)
 
 	SendMessage(hwndPB, PBM_SETSTEP, (WPARAM)1, 0);
 
+	UpdateWindow(hwndPB);	// To update immediately
+
 	return hwndPB;
 }
 

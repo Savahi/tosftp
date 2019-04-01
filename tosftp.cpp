@@ -13,10 +13,28 @@
 #include "sftp.h"
 #include "pbar.h"
 
-std::map<int, std::wstring> _errorMessages = {
-	{ 0, L"" }, { -1, L"Unknown error"}, { -2, L"Failed to read local file" },
-	{ -3, L"Failed to read remote file" }, { -4, L"Failed to write local file" }, { -5, L"Failed to write remote file" }
+std::map<int, std::wstring> _ftpErrorMessages = {
+	{ 0, L"" }, { -1, L"Unknown error"}, 
+	{ FTP_ERROR_FAILED_TO_OPEN_INTERNET, L"Failed to open connection. The Internet is unavailable?" }, 
+	{ FTP_ERROR_FAILED_TO_CONNECT, L"Failed to connect to server. Please ensure the host address, login, password and port are set correctly." }, 	
+	{ FTP_ERROR_FAILED_TO_READ_LOCAL, L"Failed to read local file." },
+	{ FTP_ERROR_FAILED_TO_READ_REMOTE, L"Failed to read remote file" }, 
+	{ FTP_ERROR_FAILED_TO_WRITE_LOCAL, L"Failed to write local file" }, 
+	{ FTP_ERROR_FAILED_TO_WRITE_REMOTE, L"Failed to write remote file" }
 };
+
+std::map<int, std::wstring> _sftpErrorMessages = {
+	{ 0, L"" }, { -1, L"Unknown error"}, 
+	{ SFTP_ERROR_FAILED_TO_CREATE_SSH_SESSION, L"Failed to create SSH session. Please ensure the Internet is available" }, 	
+	{ SFTP_ERROR_FAILED_TO_CONNECT, L"Failed to connect to server. Please ensure the Internet is available and host address and port are set correctly" }, 	
+	{ SFTP_ERROR_FAILED_TO_AUTHORIZE, L"Failed to authorize. Please ensure the host address, login, password and port are set correctly" }, 	
+	{ SFTP_ERROR_FAILED_TO_CREATE_SFTP_SESSION, L"Failed to create SFTP session. SFTP subsystem error" }, 		
+	{ SFTP_ERROR_FAILED_TO_READ_LOCAL, L"Failed to read local file" },
+	{ SFTP_ERROR_FAILED_TO_READ_REMOTE, L"Failed to read remote file" }, 
+	{ SFTP_ERROR_FAILED_TO_WRITE_LOCAL, L"Failed to write local file" }, 
+	{ SFTP_ERROR_FAILED_TO_WRITE_REMOTE, L"Failed to write remote file" }
+};
+
 
 #define CONNECTION_NAMES_BUFFER 2000
 wchar_t _connectionNames[CONNECTION_NAMES_BUFFER + 1];
@@ -81,8 +99,16 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 	}
 	int filesTransferedCounter = 0;
 
+
 	HWND progressBarParent=NULL;
-	int handle = GetPrivateProfileIntW(_connections[0], L"Handle", 0, _argList[1]);
+	int handle=0;
+	if ( argCount >= 4 ) {
+		status = swscanf( _argList[3], L"%d", &handle );
+		if( status != 1 ) {
+			handle = 0;
+		}
+	} 
+	// int handle = GetPrivateProfileIntW(_connections[0], L"Handle", 0, _argList[1]);
 	if( handle != 0 ) {
 		progressBarParent = (HWND)handle;
 	}
@@ -93,12 +119,12 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 		wchar_t action[PROFILE_STRING_BUFFER + 1];
 		status = GetPrivateProfileStringW(_connections[iconn], L"Action", NULL, action, PROFILE_STRING_BUFFER, _argList[1]);
 		if (status <= 0 || status >= PROFILE_STRING_BUFFER - 2) {
-			writeErrorIntoIniFile(_connections[iconn], L"Can't read Action field");
+			writeErrorIntoIniFile(_connections[iconn], L"Can't read the 'Action' field");
 			continue;
 		}
 
 		if (readConnection(_argList[2], _connections[iconn]) == -1) { // Reading details of the connection
-			writeErrorIntoIniFile(_connections[iconn], L"Can't read the Details of the connection");
+			writeErrorIntoIniFile(_connections[iconn], L"Can't read the details of the connection");
 			continue;
 		}
 
@@ -141,7 +167,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 		wchar_t fileNamesBuffer[PROFILE_STRING_BUFFER + 1]; // A buffer to read the list of files into
 		status = GetPrivateProfileStringW(_connections[iconn], L"FileNames", NULL, fileNamesBuffer, PROFILE_STRING_BUFFER, _argList[1]);
 		if (status <= 0 || status >= PROFILE_STRING_BUFFER - 2) {
-			writeErrorIntoIniFile(_connections[iconn], L"Failed to read file names");
+			writeErrorIntoIniFile(_connections[iconn], L"Failed to read file names to transfer");
 			continue;
 		}
 
@@ -181,25 +207,32 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 		char remoteDirMultiByte[PROFILE_STRING_BUFFER*2 + 1];
 		WideCharToMultiByte(CP_ACP, 0, fullRemoteDir, -1, remoteDirMultiByte, PROFILE_STRING_BUFFER*2, &default_char, NULL);
 
-		int initStatus = -1;
 		if (transferMode == 1) {		// FTP
-			int credentialsStatus = ftpSetCredentials(serverMultiByte, userMultiByte, passwordMultiByteDecrypted, _port);
-			if (credentialsStatus >= 0) {
-				initStatus = ftpInit();
-			}
+			status = ftpSetCredentials(serverMultiByte, userMultiByte, passwordMultiByteDecrypted, _port);
 		} else {		// SSH
-			int credentialsStatus = sftpSetCredentials(serverMultiByte, userMultiByte, passwordMultiByteDecrypted);
-			if (credentialsStatus >= 0) {
-				initStatus = sftpInit();
-			}
+			status = sftpSetCredentials(serverMultiByte, userMultiByte, passwordMultiByteDecrypted, _port);
 		}
-		if (initStatus < 0) {
-			writeErrorIntoIniFile(_connections[iconn], L"Can't init transfer library");
+		if( status < 0 ) {
+			writeErrorIntoIniFile(_connections[iconn], L"Failed to set connection credentials. Too long or invalid host address, user name, password or port?");
 			continue;
+		}
+		
+		if (transferMode == 1) {	// FTP
+			status = ftpInit();
+			if (status < 0) {
+				writeErrorIntoIniFile(_connections[iconn], _ftpErrorMessages.find(status)->second.c_str());
+				continue;
+			}
+		} else {					// SSH
+			status = sftpInit();
+			if (status < 0) {
+				writeErrorIntoIniFile(_connections[iconn], _sftpErrorMessages.find(status)->second.c_str());
+				continue;
+			}
 		}
 
 		if (readFileNames(fileNamesBuffer) <= 0) {
-			writeErrorIntoIniFile(_connections[iconn], L"Can't read file names to transfer");
+			writeErrorIntoIniFile(_connections[iconn], L"Can't read file names to transfer or there are none");
 			continue;
 		}
 
@@ -229,12 +262,13 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 				if (transferMode == 1) {	// FTP
 					status = ftpUpload(srcPathMultiByte, fileNameMultiByte, remoteDirMultiByte, !remoteDirIsEmpty);
 					ftpGetLastError(&error, NULL, NULL);
+					errorTexts.push_back(_ftpErrorMessages.find(error)->second);					
 				} else {					// SSH FTP
 					status = sftpUpload(srcPathMultiByte, fileNameMultiByte, remoteDirMultiByte, !remoteDirIsEmpty);
 					sftpGetLastError(&error, NULL, NULL);
+					errorTexts.push_back(_sftpErrorMessages.find(error)->second);					
 				}
 				errors[ifile] = (status == 0) ? L'+' : L'-';
-				errorTexts.push_back(_errorMessages.find(error)->second);
 			} else if (actionCode == 1) { 	// Downloading...
 				wchar_t destPath[PROFILE_STRING_BUFFER * 2 + 1];
 				wcscpy(destPath, localDir);
@@ -252,12 +286,14 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 				if (transferMode == 1) {	//	FTP
 					status = ftpDownload(destPathMultiByte, fileNameMultiByte, remoteDirMultiByte);
 					ftpGetLastError(&error, NULL, NULL);
-				} else {					// SSH FTP
+					errorTexts.push_back(_ftpErrorMessages.find(error)->second);
+					} else {					// SSH FTP
 					status = sftpDownload(destPathMultiByte, fileNameMultiByte, remoteDirMultiByte);
 					sftpGetLastError(&error, NULL, NULL);
+					errorTexts.push_back(_sftpErrorMessages.find(error)->second);					
 				}
 				errors[ifile] = (status == 0) ? L'+' : L'-';
-				errorTexts.push_back(_errorMessages.find(error)->second);
+
 			} else if( actionCode == 3 ) { 		// Delete
 				substituteCharInString(_fileNames[ifile], '\\', '/');
 				char fileNameMultiByte[PROFILE_STRING_BUFFER + 1];
@@ -267,12 +303,14 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* cmdLine
 				if (transferMode == 1) {	// FTP
 					status = ftpDelete(fileNameMultiByte, remoteDirMultiByte);
 					ftpGetLastError(&error, NULL, NULL);
+					errorTexts.push_back(_ftpErrorMessages.find(error)->second);
 				} else {					// SSH FTP
 					status = sftpDelete(fileNameMultiByte, remoteDirMultiByte);
 					sftpGetLastError(&error, NULL, NULL);
+					errorTexts.push_back(_sftpErrorMessages.find(error)->second);					
 				}
 				errors[ifile] = (status == 0) ? L'+' : L'-';
-				errorTexts.push_back(_errorMessages.find(error)->second);
+
 			}
 			filesTransferedCounter += 1;
 			pbarStep(hProgressBar);
@@ -369,7 +407,7 @@ int readConnection(wchar_t *fileName, wchar_t *connectionName)
 	if (status <= 0 || status >= PROFILE_STRING_BUFFER - 2) {
 		return -1;
 	}
-	//_port = GetPrivateProfileIntW(connectionName, L"Port", -1, fileName);
+	_port = GetPrivateProfileIntW(connectionName, L"Port", -1, fileName);
 	return 0;
 }
 

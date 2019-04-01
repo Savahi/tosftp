@@ -27,6 +27,8 @@ static char _password[SFTP_MAX_PASSWORD + 1];
 #define SFTP_MAX_REMOTE_ADDR 500
 static char _remoteAddr[SFTP_MAX_REMOTE_ADDR + 1];
 
+static int _port = -1;
+
 static ssh_session _sshSession=NULL;
 static sftp_session _sftpSession=NULL;
 
@@ -221,7 +223,7 @@ void sftpSetTimeOut(unsigned long int timeOut) {
 }
 
 
-int sftpSetCredentials(char *server, char *user, char *password) {
+int sftpSetCredentials(char *server, char *user, char *password, int port) {
 	int status;
 	_sftpErrorCode = 0;
 	_sshErrorCode = SSH_NO_ERROR;
@@ -232,6 +234,11 @@ int sftpSetCredentials(char *server, char *user, char *password) {
 		strcpy( _server, server );
 		strcpy( _user, user );
 		strcpy( _password, password );
+		if( port < 0 ) {
+			_port = 22;
+		} else {
+			_port = port;
+		}
 	}
 	return _sftpErrorCode;
 }
@@ -246,27 +253,30 @@ int sftpInit(void) {
 
 	_sshSession = ssh_new();
 	if (_sshSession == NULL) {
-		_sftpErrorCode = -1;
+		_sftpErrorCode = SFTP_ERROR_FAILED_TO_CREATE_SSH_SESSION;
 	} else {
 		ssh_options_set(_sshSession, SSH_OPTIONS_HOST, _server);
+		if( !( _port < 0 ) ) {
+			ssh_options_set(_sshSession, SSH_OPTIONS_PORT, &_port); 			
+		}
 		// Connect to server 
 		status = ssh_connect(_sshSession);
 	 	if (status != SSH_OK) { 
-			_sftpErrorCode = -1;
+			_sftpErrorCode = SFTP_ERROR_FAILED_TO_CONNECT;
 		} else {
 			ssh_options_set(_sshSession, SSH_OPTIONS_USER, _user);
 			status = ssh_userauth_password(_sshSession, NULL, _password);
 			//status = ssh_userauth_password(_sshSession, _user, _password);
 			if (status != SSH_AUTH_SUCCESS) {
-				_sftpErrorCode = -1;
+				_sftpErrorCode = SFTP_ERROR_FAILED_TO_AUTHORIZE;
 			} else { // INITIALIZING SFTP SESSION...
 				_sftpSession = sftp_new(_sshSession);
   				if (_sftpSession == NULL) { 
-  					_sftpErrorCode = -1;
+  					_sftpErrorCode = SFTP_ERROR_FAILED_TO_CREATE_SFTP_SESSION;
   				} else {
 					status = sftp_init(_sftpSession);
 					if( status != SSH_OK ) {
-	  					_sftpErrorCode = -1;
+	  					_sftpErrorCode = SFTP_ERROR_FAILED_TO_CREATE_SFTP_SESSION;
 					}
 				}
 			}
@@ -274,15 +284,17 @@ int sftpInit(void) {
 	}
 
 	if( _sftpErrorCode == -1 ) {
-		sftpClose(); // An error arised, that's why the line is commented.
+		sftpClose(false); // An error arised, that's why the line is commented.
 	} 
 	return _sftpErrorCode;
 }
 
 
-void sftpClose(void) {
-	_sftpErrorCode = 0;
-	_sshErrorCode = SSH_NO_ERROR;
+void sftpClose(bool resetErrors) {
+	if( resetErrors ) {
+		_sftpErrorCode = 0;
+		_sshErrorCode = SSH_NO_ERROR;
+	}
 
 	if( _sftpSession != NULL ) {
 		sftp_free(_sftpSession);

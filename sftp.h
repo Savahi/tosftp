@@ -4,10 +4,16 @@
 
 #define SFTP_ERROR_Ok 0
 #define SFTP_ERROR -1
-#define SFTP_ERROR_FAILED_TO_READ_LOCAL -2
-#define SFTP_ERROR_FAILED_TO_READ_REMOTE -3
-#define SFTP_ERROR_FAILED_TO_WRITE_LOCAL -4
-#define SFTP_ERROR_FAILED_TO_WRITE_REMOTE -5
+
+#define SFTP_ERROR_FAILED_TO_CREATE_SSH_SESSION		-100
+#define SFTP_ERROR_FAILED_TO_CONNECT				-101
+#define SFTP_ERROR_FAILED_TO_AUTHORIZE				-102
+#define SFTP_ERROR_FAILED_TO_CREATE_SFTP_SESSION	-103
+
+#define SFTP_ERROR_FAILED_TO_READ_LOCAL		-200
+#define SFTP_ERROR_FAILED_TO_READ_REMOTE	-201
+#define SFTP_ERROR_FAILED_TO_WRITE_LOCAL	-202
+#define SFTP_ERROR_FAILED_TO_WRITE_REMOTE	-203
 
 // Uploads a file to a server. Returns negative value if failed, 0 if ok.
 // The connection credentials must be set earlier...
@@ -33,11 +39,11 @@ int sftpTest( char *fileName, 					// A file name to test
 				// If not NULL, will be assigned with a size of the file in bytes
 
 // 
-int sftpSetCredentials(char *server, char *user, char *password);
+int sftpSetCredentials(char *server, char *user, char *password, int port);
 
 int sftpInit( void ); // Must be called before doing anything else...
 
-void sftpClose( void ); // Must be called when all transfers are finished...
+void sftpClose( bool resetErrors=true ); // Must be called when all transfers are finished...
 
 int sftpGetLastError( int *sftpErrorCode, 		// 
 	int *sshErrorCode, 						//

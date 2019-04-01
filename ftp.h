@@ -4,10 +4,14 @@
 
 #define FTP_ERROR_Ok 0
 #define FTP_ERROR -1
-#define FTP_ERROR_FAILED_TO_READ_LOCAL -2
-#define FTP_ERROR_FAILED_TO_READ_REMOTE -3
-#define FTP_ERROR_FAILED_TO_WRITE_LOCAL -4
-#define FTP_ERROR_FAILED_TO_WRITE_REMOTE -5
+
+#define FTP_ERROR_FAILED_TO_OPEN_INTERNET	-100
+#define FTP_ERROR_FAILED_TO_CONNECT			-101
+
+#define FTP_ERROR_FAILED_TO_READ_LOCAL		-200
+#define FTP_ERROR_FAILED_TO_READ_REMOTE		-201
+#define FTP_ERROR_FAILED_TO_WRITE_LOCAL		-202
+#define FTP_ERROR_FAILED_TO_WRITE_REMOTE	-203
 
 // Uploads a file to a server. Returns negative value if failed, 0 if ok.
 // The connection credentials must be set earlier...
@@ -36,7 +40,7 @@ int ftpSetCredentials(char *server, char *user, char *password, int);
 
 int ftpInit( void ); // Must be called before doing anything else...
 
-void ftpClose( void ); // Must be called when all transfers are finished...
+void ftpClose( bool resetErrors=true ); // Must be called when all transfers are finished...
 
 int ftpGetLastError( int *ftpErrorCode, 		// 
 	DWORD *winInetErrorCode, 						//
